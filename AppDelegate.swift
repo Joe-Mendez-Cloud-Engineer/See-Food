@@ -3,7 +3,7 @@
 //  See-Food
 //
 //  Created by Joe Mendez on 6/4/17.
-//  Copyright © 2017 Scientific Neo. All rights reserved.
+//  Copyright © 2017 Joe Mendez. All rights reserved.
 //
 
 import UIKit
