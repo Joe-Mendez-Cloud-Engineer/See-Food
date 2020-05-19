@@ -1,7 +1,7 @@
 # See-Food
 This is an image classifier app for iOS written in swift utilizing IBM Watson for image classification.
 
-You can download this app from a zip file in this repsitory. It's works with any iPhone running iOS 9.3 or above.
+You can download this app from a zip file in this repsitory.
 
 To run this code on your computer, you must have a Mac, Xcode, and an account with IBM Watson to utilize it's image classifier capabilities.
 
