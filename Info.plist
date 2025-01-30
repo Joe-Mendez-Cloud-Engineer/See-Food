@@ -40,5 +40,8 @@
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
+   	<key>IBM Watson Visual Recognition API Key</key>
+	<!-- Enter custom API key below -->
+	<string>****************************************</string>
 </dict>
 </plist>
