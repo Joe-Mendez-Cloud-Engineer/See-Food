@@ -3,111 +3,154 @@
 //  See-Food
 //
 //  Created by Joe Mendez on 6/4/17.
-//  Copyright © 2017 Scientific Neo. All rights reserved.
+//  Copyright © 2017 Joe Mendez. All rights reserved.
 //
-
 import UIKit
 import VisualRecognitionV3
 import SVProgressHUD
 
-class ViewController: UIViewController, UIImagePickerControllerDelegate,
-    UINavigationControllerDelegate {
+class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     
-    let apiKey = "f7a367003747f83ffb4cf6cc5c620a81fc3c902f"
-    let version = "2017-06-05"
+    private enum Constants {
+        static let apiKey = SecureConfiguration.visualRecognitionAPIKey
+        static let version = "2017-06-05"
+        static let compressionQuality: CGFloat = 0.5
+        static let tempImageFileName = "tempImage.jpg"
+    }
     
-    @IBOutlet weak var topBarImageView: UIImageView!
-    @IBOutlet weak var viewOfImage: UIImageView!
+    @IBOutlet private weak var topBarImageView: UIImageView!
+    @IBOutlet private weak var viewOfImage: UIImageView!
+    @IBOutlet private weak var buttonCamera: UIBarButtonItem!
     
-    
-    @IBOutlet weak var buttonCamera: UIBarButtonItem!
-    
-    
-    let imagePicker = UIImagePickerController()
-    var classificationResults : [String] = []
+    private let imagePicker = UIImagePickerController()
+    private lazy var visualRecognition: VisualRecognition = {
+        return VisualRecognition(apiKey: Constants.apiKey, version: Constants.version)
+    }()
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        
-        imagePicker.delegate = self
+        setupImagePicker()
+        setupNavigationBar()
     }
     
-    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [String : Any]) {
-        
-        buttonCamera.isEnabled = false
-        SVProgressHUD.show()
-        
-        if let image = info[UIImagePickerControllerOriginalImage] as? UIImage {
-            
-            viewOfImage.image = image
-            
-            imagePicker.dismiss(animated: true, completion: nil)
-            
-            let visualRicognition = VisualRecognition(apiKey: apiKey, version:version)
-            
-            let imageData = UIImageJPEGRepresentation(image, 0.01)
-            
-            let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            
-            let fileURL = documentsURL.appendingPathComponent("tempImage.jpg")
-            
-            try? imageData?.write(to: fileURL, options: [])
-            
-            visualRicognition.classify(imageFile: fileURL, success:{
-                (classifiedImages) in
-                let classes = classifiedImages.images.first!.classifiers.first!.classes
-                    
-                self.classificationResults = []
-                    
-                for index in 0..<classes.count{
-                    self.classificationResults.append(classes[index].classification)
-                    }
-                
-                print(self.classificationResults)
-                    
-                DispatchQueue.main.async {
-                        self.buttonCamera.isEnabled = true
-                        SVProgressHUD.dismiss()
-                    }
-                    
-                    if self.classificationResults.contains("hotdog"){
-                        DispatchQueue.main.async {
-                            self.navigationItem.title = "Hotdog"
-                            self.navigationController?.navigationBar.barTintColor = UIColor.green
-                            self.navigationController?.navigationBar.isTranslucent = false
-                            self.topBarImageView.image = UIImage(named:"hotdog")
-                        }
-                        }
-                        
-                    else{
-                        DispatchQueue.main.async {
-                            
-                            self.navigationItem.title = "Not hotdog"
-                            self.navigationController?.navigationBar.barTintColor = UIColor.red
-                            self.navigationController?.navigationBar.isTranslucent = false
-                            self.topBarImageView.image = UIImage(named:"nothotdog")
-                            
-                        }
-                        
-                    }
-            })
-            
-        } else {
-            
-            print("There was an error in processing this request")
-        }
+
+    @IBAction private func tapThatCamera(_ sender: UIBarButtonItem) {
+        presentImagePicker()
     }
     
-    @IBAction func tapThatCamera(_ sender: UIBarButtonItem) {
-        
-        imagePicker.sourceType = .camera
-        imagePicker.allowsEditing = false
-        
-        present(imagePicker, animated: true, completion: nil)
-        
+    func imagePickerController(_ picker: UIImagePickerController, 
+                               didFinishPickingMediaWithInfo info: [String : Any]) {
+        handleImageSelection(info: info)
+    }
+    
+    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        resetUIState()
+        dismissImagePicker()
     }
 }
 
+private extension ViewController {
+    func setupImagePicker() {
+        imagePicker.delegate = self
+        imagePicker.sourceType = .camera
+        imagePicker.allowsEditing = false
+    }
+    
+    func setupNavigationBar() {
+        navigationController?.navigationBar.isTranslucent = false
+    }
+}
 
+private extension ViewController {
+    func handleImageSelection(info: [String: Any]) {
+        guard let image = info[UIImagePickerControllerOriginalImage] as? UIImage else {
+            showError(message: "Failed to get image")
+            return
+        }
+        
+        viewOfImage.image = image
+        buttonCamera.isEnabled = false
+        SVProgressHUD.show()
+        
+        dismissImagePicker { [weak self] in
+            self?.classifyImage(image)
+        }
+    }
+    
+    func classifyImage(_ image: UIImage) {
+        guard let imageData = UIImageJPEGRepresentation(image, Constants.compressionQuality) else {
+            showError(message: "Image processing failed")
+            return
+        }
+        
+        visualRecognition.classify(image: imageData) { [weak self] response, error in
+            guard let self = self else { return }
+            
+            DispatchQueue.main.async {
+                self.buttonCamera.isEnabled = true
+                SVProgressHUD.dismiss()
+            }
+            
+            if let error = error {
+                self.showError(message: error.localizedDescription)
+                return
+            }
+            
+            guard let classifiedImages = response?.result else {
+                self.showError(message: "Classification failed")
+                return
+            }
+            
+            self.handleClassificationResult(classifiedImages)
+        }
+    }
+    
+    func handleClassificationResult(_ classifiedImages: ClassifiedImages) {
+        guard let classes = classifiedImages.images.first?.classifiers.first?.classes else {
+            showError(message: "No classifications found")
+            return
+        }
+        
+        let classifications = classes.map { $0.classification }
+        let isHotDog = classifications.contains("hotdog")
+        
+        DispatchQueue.main.async { [weak self] in
+            self?.updateUIForHotdogStatus(isHotDog)
+        }
+    }
+}
 
+private extension ViewController {
+    func updateUIForHotdogStatus(_ isHotDog: Bool) {
+        navigationItem.title = isHotDog ? "Hotdog" : "Not hotdog"
+        let color = isHotDog ? UIColor.green : UIColor.red
+        let imageName = isHotDog ? "hotdog" : "nothotdog"
+        
+        navigationController?.navigationBar.barTintColor = color
+        topBarImageView.image = UIImage(named: imageName)
+    }
+    
+    func resetUIState() {
+        buttonCamera.isEnabled = true
+        SVProgressHUD.dismiss()
+    }
+    
+    func showError(message: String) {
+        DispatchQueue.main.async { [weak self] in
+            let alert = UIAlertController(title: "Error", message: message, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            self?.present(alert, animated: true)
+            self?.resetUIState()
+        }
+    }
+}
 
+private extension ViewController {
+    func presentImagePicker() {
+        present(imagePicker, animated: true)
+    }
+    
+    func dismissImagePicker(completion: (() -> Void)? = nil) {
+        imagePicker.dismiss(animated: true, completion: completion)
+    }
+}
